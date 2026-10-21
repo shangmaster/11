@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 作用域：只注入学习通，其他 App 一律不碰 -->
+    <string-array name="xposed_scope">
+        <item>com.chaoxing.mobile</item>
+    </string-array>
+</resources>

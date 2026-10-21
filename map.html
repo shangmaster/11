@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>签到哨兵 · 选点</title>
+<style>
+:root{
+  color-scheme: dark;
+  --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e;
+  --ok:#3fb950; --warn:#d29922; --err:#f85149; --accent:#2f81f7;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);
+  font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif}
+#app{display:flex;flex-direction:column;height:100%}
+
+/* 顶部搜索 */
+.topbar{display:flex;gap:8px;padding:10px 12px;background:var(--panel);
+  border-bottom:1px solid var(--line);flex:none}
+.topbar input{flex:1;min-width:0;background:#0d1117;border:1px solid var(--line);
+  border-radius:10px;color:var(--fg);padding:9px 12px;font-size:15px;outline:none}
+.topbar input:focus{border-color:var(--accent)}
+.topbar button{flex:none;background:#21262d;border:1px solid var(--line);color:var(--fg);
+  border-radius:10px;padding:0 14px;font-size:14px}
+.topbar button:active{background:#30363d}
+
+/* 地图 */
+#map{position:relative;flex:1;overflow:hidden;background:#0b1a12;touch-action:none}
+#tiles{position:absolute;inset:0;will-change:transform}
+#tiles img{position:absolute;width:256px;height:256px;user-select:none;
+  pointer-events:none;-webkit-user-drag:none;opacity:0;transition:opacity .18s}
+#tiles img.on{opacity:1}
+#cross{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;
+  pointer-events:none;z-index:5}
+#cross::before,#cross::after{content:"";position:absolute;background:var(--accent);
+  box-shadow:0 0 0 2px rgba(0,0,0,.55)}
+#cross::before{left:11px;top:0;width:4px;height:26px;border-radius:2px}
+#cross::after{top:11px;left:0;height:4px;width:26px;border-radius:2px}
+#cross.pin::before,#cross.pin::after{background:#f0883e}
+
+.zoom{position:absolute;right:12px;bottom:14px;display:flex;flex-direction:column;gap:8px;z-index:6}
+.zoom button{width:42px;height:42px;border-radius:12px;background:rgba(22,27,34,.92);
+  border:1px solid var(--line);color:var(--fg);font-size:20px;line-height:1;
+  backdrop-filter:blur(6px)}
+.zoom button:active{background:#30363d}
+#attr{position:absolute;left:8px;bottom:4px;font-size:10px;color:#7d8590;
+  background:rgba(13,17,23,.6);padding:1px 6px;border-radius:4px;z-index:4}
+
+/* 底部卡片 */
+.sheet{flex:none;background:var(--panel);border-top:1px solid var(--line);
+  padding:10px 12px calc(10px + var(--safe-b))}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.row label{flex:none;width:52px;color:var(--dim);font-size:13px}
+.row input{flex:1;min-width:0;background:#0d1117;border:1px solid var(--line);
+  border-radius:9px;color:var(--fg);padding:8px 10px;font-size:14px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;outline:none}
+.row input:focus{border-color:var(--accent)}
+.btns{display:flex;gap:8px;margin-top:2px}
+.btns button{flex:1;border-radius:10px;border:1px solid var(--line);background:#21262d;
+  color:var(--fg);padding:11px 8px;font-size:14px;font-weight:500}
+.btns button.primary{background:#238636;border-color:#2ea043;color:#fff}
+.btns button:active{filter:brightness(1.25)}
+#msg{font-size:12.5px;color:var(--dim);margin-top:8px;min-height:18px;word-break:break-all}
+#msg.ok{color:var(--ok)} #msg.err{color:var(--err)} #msg.warn{color:var(--warn)}
+.chip{display:inline-block;background:#21262d;border:1px solid var(--line);
+  border-radius:999px;padding:3px 10px;font-size:12px;color:var(--dim);margin:0 6px 6px 0}
+.chip:active{background:#30363d}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <input id="q" placeholder="搜索地点，如 武汉大学 图书馆" autocomplete="off">
+    <button id="go">搜索</button>
+  </div>
+
+  <div id="map">
+    <div id="tiles"></div>
+    <div id="cross"></div>
+    <div class="zoom">
+      <button id="zin">+</button>
+      <button id="zout">−</button>
+    </div>
+    <div id="attr">高德 GCJ-02</div>
+  </div>
+
+  <div class="sheet">
+    <div style="margin-bottom:8px" id="quick"></div>
+    <div class="row"><label>坐标</label><input id="ll" placeholder="30.541234, 114.361234" inputmode="decimal"></div>
+    <div class="row"><label>地址</label><input id="addr" placeholder="签到地址文本（可选）"></div>
+    <div class="btns">
+      <button id="here">用当前定位</button>
+      <button id="apply" class="primary">设为签到点</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   零依赖瓦片地图。为什么不用 Leaflet：
+     手机上多一个 CDN 就多一个打不开的理由；这里只做三件事——拖、缩、落点。
+   坐标：高德瓦片是 GCJ-02，页面上显示和提交的都是 GCJ-02，不做二次转换。
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var TILE = 256;
+  var API = location.origin;            // 和页面同源，手机壳直接把 baseURL 指到引擎
+  var TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+  // ---------- 坐标系 ----------
+  var PI = Math.PI, A = 6378245.0, EE = 0.00669342162296594323, X_PI = PI * 3000 / 180;
+
+  function outOfChina(lat, lon) { return !(lon > 73.66 && lon < 135.05 && lat > 3.86 && lat < 53.55); }
+  function tLat(x, y) {
+    var r = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*PI) + 20*Math.sin(2*x*PI)) * 2/3;
+    r += (20*Math.sin(y*PI) + 40*Math.sin(y/3*PI)) * 2/3;
+    r += (160*Math.sin(y/12*PI) + 320*Math.sin(y*PI/30)) * 2/3;
+    return r;
+  }
+  function tLon(x, y) {
+    var r = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*PI) + 20*Math.sin(2*x*PI)) * 2/3;
+    r += (20*Math.sin(x*PI) + 40*Math.sin(x/3*PI)) * 2/3;
+    r += (150*Math.sin(x/12*PI) + 300*Math.sin(x/30*PI)) * 2/3;
+    return r;
+  }
+  function wgs2gcj(lat, lon) {
+    if (outOfChina(lat, lon)) return [lat, lon];
+    var dLat = tLat(lon - 105, lat - 35), dLon = tLon(lon - 105, lat - 35);
+    var rad = lat / 180 * PI, magic = Math.sin(rad);
+    magic = 1 - EE * magic * magic;
+    var sq = Math.sqrt(magic);
+    dLat = (dLat * 180) / ((A * (1 - EE)) / (magic * sq) * PI);
+    dLon = (dLon * 180) / (A / sq * Math.cos(rad) * PI);
+    return [lat + dLat, lon + dLon];
+  }
+
+  // ---------- 墨卡托 ----------
+  function worldSize(z) { return TILE * Math.pow(2, z); }
+  function latLonToPx(lat, lon, z) {
+    var s = worldSize(z);
+    var x = (lon + 180) / 360 * s;
+    var sy = Math.sin(lat * PI / 180);
+    var y = (0.5 - Math.log((1 + sy) / (1 - sy)) / (4 * PI)) * s;
+    return [x, y];
+  }
+  function pxToLatLon(x, y, z) {
+    var s = worldSize(z);
+    var lon = x / s * 360 - 180;
+    var n = PI - 2 * PI * y / s;
+    var lat = 180 / PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    return [lat, lon];
+  }
+
+  // ---------- 状态 ----------
+  var view = { lat: 30.5412, lon: 114.3612, z: 16 };   // 默认武汉大学，等一下会被覆盖
+  var picked = null;                                     // [lat, lon] GCJ-02
+  var tiles = {};                                        // key -> img
+  var mapEl = document.getElementById('map');
+  var tilesEl = document.getElementById('tiles');
+  var crossEl = document.getElementById('cross');
+  var llEl = document.getElementById('ll');
+  var addrEl = document.getElementById('addr');
+  var msgEl = document.getElementById('msg');
+
+  function msg(text, cls) {
+    msgEl.textContent = text || '';
+    msgEl.className = cls || '';
+  }
+
+  // ---------- 瓦片 ----------
+  // 高德矢量：style=8 是路网+标注；style=6 是卫星。都不需要 key。
+  var SUB = [1, 2, 3, 4];
+  function tileUrl(x, y, z) {
+    var s = SUB[(x + y) % 4];
+    return 'https://webst0' + s + '.is.autonavi.com/appmaptile?style=7&x=' + x +
+           '&y=' + y + '&z=' + z;
+  }
+
+  function render() {
+    var w = mapEl.clientWidth, h = mapEl.clientHeight;
+    var c = latLonToPx(view.lat, view.lon, view.z);
+    var originX = c[0] - w / 2, originY = c[1] - h / 2;   // 视口左上角的世界像素
+    var x0 = Math.floor(originX / TILE), x1 = Math.floor((originX + w) / TILE);
+    var y0 = Math.floor(originY / TILE), y1 = Math.floor((originY + h) / TILE);
+    var n = Math.pow(2, view.z);
+    var keep = {};
+
+    for (var x = x0; x <= x1; x++) {
+      for (var y = y0; y <= y1; y++) {
+        if (y < 0 || y >= n) continue;
+        var wx = ((x % n) + n) % n;
+        var key = view.z + '/' + wx + '/' + y;
+        keep[key] = 1;
+        var img = tiles[key];
+        if (!img) {
+          img = document.createElement('img');
+          img.src = tileUrl(wx, y, view.z);
+          img.onload = (function (el) { return function () { el.classList.add('on'); }; })(img);
+          img.onerror = (function (el) { return function () { el.style.opacity = 0; }; })(img);
+          tilesEl.appendChild(img);
+          tiles[key] = img;
+        }
+        img.style.left = Math.round(x * TILE - originX) + 'px';
+        img.style.top = Math.round(y * TILE - originY) + 'px';
+      }
+    }
+    // 回收视野外的瓦片
+    Object.keys(tiles).forEach(function (k) {
+      if (!keep[k]) { tiles[k].remove(); delete tiles[k]; }
+    });
+
+    var p = picked || [view.lat, view.lon];
+    llEl.value = p[0].toFixed(6) + ', ' + p[1].toFixed(6);
+    crossEl.classList.toggle('pin', !!picked);
+  }
+
+  // ---------- 手势 ----------
+  var drag = null;
+  function pointer(e) {
+    return e.touches ? e.touches[0] : e;
+  }
+  function onDown(e) {
+    if (e.touches && e.touches.length === 2) {
+      drag = { pinch: true,
+        d0: dist(e.touches[0], e.touches[1]),
+        z0: view.z };
+      return;
+    }
+    var p = pointer(e);
+    drag = { x: p.clientX, y: p.clientY, moved: 0, cx: view.lat, cy: view.lon };
+  }
+  function onMove(e) {
+    if (!drag) return;
+    if (drag.pinch && e.touches && e.touches.length === 2) {
+      var d = dist(e.touches[0], e.touches[1]);
+      var dz = Math.log(d / drag.d0) / Math.LN2;
+      setZoom(drag.z0 + dz);
+      return;
+    }
+    var p = pointer(e);
+    var dx = p.clientX - drag.x, dy = p.clientY - drag.y;
+    drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy));
+    var c = latLonToPx(drag.cx, drag.cy, view.z);
+    var ll = pxToLatLon(c[0] - dx, c[1] - dy, view.z);
+    view.lat = Math.max(-85, Math.min(85, ll[0]));
+    view.lon = ll[1];
+    render();
+    if (e.cancelable) e.preventDefault();
+  }
+  function onUp(e) {
+    if (drag && !drag.pinch && drag.moved < 6) {
+      // 轻点 = 在那个位置落点
+      var p = (e.changedTouches && e.changedTouches[0]) || e;
+      pickAt(p.clientX, p.clientY);
+    } else if (drag && !drag.pinch && drag.moved >= 6) {
+      picked = null;            // 拖动后清掉落点，回到"中心十字"模式
+      render();
+    }
+    drag = null;
+  }
+  function dist(a, b) {
+    var dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+    return Math.max(1, Math.sqrt(dx * dx + dy * dy));
+  }
+  function pickAt(clientX, clientY) {
+    var r = mapEl.getBoundingClientRect();
+    var c = latLonToPx(view.lat, view.lon, view.z);
+    var ll = pxToLatLon(c[0] + (clientX - r.left) - r.width / 2,
+                        c[1] + (clientY - r.top) - r.height / 2, view.z);
+    picked = [ll[0], ll[1]];
+    render();
+    reverse(ll[0], ll[1]);
+  }
+
+  function setZoom(z) {
+    view.z = Math.max(3, Math.min(19, z));
+    render();
+  }
+
+  mapEl.addEventListener('touchstart', onDown, { passive: true });
+  mapEl.addEventListener('touchmove', onMove, { passive: false });
+  mapEl.addEventListener('touchend', onUp);
+  mapEl.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', function (e) { if (drag) onMove(e); });
+  window.addEventListener('mouseup', onUp);
+  mapEl.addEventListener('wheel', function (e) {
+    setZoom(view.z + (e.deltaY < 0 ? 1 : -1));
+    e.preventDefault();
+  }, { passive: false });
+
+  document.getElementById('zin').onclick = function () { setZoom(view.z + 1); };
+  document.getElementById('zout').onclick = function () { setZoom(view.z - 1); };
+
+  // ---------- 后端交互 ----------
+  function api(path, opts) {
+    opts = opts || {};
+    var url = API + path + (TOKEN ? (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN) : '');
+    return fetch(url, opts).then(function (r) { return r.json(); });
+  }
+
+  function reverse(lat, lon) {
+    msg('正在解析地址…');
+    api('/api/geocode?lat=' + lat + '&lon=' + lon).then(function (j) {
+      if (j && j.ok && j.name) {
+        if (!addrEl.value) addrEl.value = j.name;
+        msg('落点：' + j.name, 'ok');
+      } else {
+        msg('落点已选，地址解析不可用（手填也行）', 'warn');
+      }
+    }).catch(function () { msg('落点已选（引擎未连接）', 'warn'); });
+  }
+
+  document.getElementById('go').onclick = doSearch;
+  document.getElementById('q').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  function doSearch() {
+    var q = document.getElementById('q').value.trim();
+    if (!q) return;
+    msg('搜索中…');
+    api('/api/geocode?q=' + encodeURIComponent(q)).then(function (j) {
+      if (!j || !j.ok) { msg('没找到：' + ((j && j.error) || '未知错误'), 'err'); return; }
+      view.lat = j.lat; view.lon = j.lon; view.z = j.zoom || 17;
+      picked = [j.lat, j.lon];
+      if (j.name) addrEl.value = j.name;
+      render();
+      msg('已定位：' + (j.name || q), 'ok');
+    }).catch(function () { msg('搜索失败（引擎未连接）', 'err'); });
+  }
+
+  document.getElementById('here').onclick = function () {
+    if (!navigator.geolocation) { msg('这个浏览器不给定位权限', 'err'); return; }
+    msg('取定位中…');
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var g = wgs2gcj(pos.coords.latitude, pos.coords.longitude);
+      view.lat = g[0]; view.lon = g[1]; view.z = 18; picked = g;
+      render();
+      msg('已用当前定位（误差约 ' + Math.round(pos.coords.accuracy) + ' 米）', 'ok');
+    }, function (e) {
+      msg('定位失败：' + e.message, 'err');
+    }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
+  };
+
+  document.getElementById('apply').onclick = function () {
+    var p = picked;
+    if (!p) {
+      var txt = llEl.value;
+      var m = txt.split(/[,\s]+/).filter(Boolean).map(Number);
+      if (m.length === 2 && isFinite(m[0]) && isFinite(m[1])) p = m;
+    }
+    if (!p) { msg('先在地图上点一个位置', 'err'); return; }
+    var payload = { lat: p[0], lon: p[1], datum: 'gcj02', address: addrEl.value || '' };
+    api('/api/point', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (j) {
+      msg(j && j.ok ? '✅ 已设为签到点 ' + p[0].toFixed(6) + ', ' + p[1].toFixed(6)
+                    : '❌ 保存失败：' + ((j && j.error) || '引擎未连接'),
+          j && j.ok ? 'ok' : 'err');
+    }).catch(function () { msg('❌ 引擎未连接（先启动 run.py serve）', 'err'); });
+  };
+
+  // ---------- 初始化 ----------
+  function boot() {
+    render();
+    api('/api/status').then(function (j) {
+      if (!j || !j.ok) return;
+      var pt = j.data && j.data.point;
+      if (pt && pt.length === 2) {
+        view.lat = pt[0]; view.lon = pt[1]; picked = pt; view.z = 17;
+        render();
+        msg('当前签到点：' + pt[0].toFixed(6) + ', ' + pt[1].toFixed(6), 'ok');
+      }
+    }).catch(function () {});
+    // 老师最近一次要求的地址，做成一键跳转
+    api('/api/hints').then(function (j) {
+      if (!j || !j.ok || !(j.hints || []).length) return;
+      var box = document.getElementById('quick');
+      box.innerHTML = '';
+      j.hints.forEach(function (h) {
+        var el = document.createElement('span');
+        el.className = 'chip';
+        el.textContent = '📍 ' + h;
+        el.onclick = function () {
+          document.getElementById('q').value = h;
+          doSearch();
+        };
+        box.appendChild(el);
+      });
+    }).catch(function () {});
+  }
+
+  window.addEventListener('resize', render);
+  boot();
+})();
+</script>
+</body>
+</html>

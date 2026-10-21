@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 图标：一个绿色的定位针 + 对勾，纯矢量，不用 PNG 资源 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 底圆 -->
+    <path
+        android:fillColor="#0D1117"
+        android:pathData="M54,4 A50,50 0 1,0 54,104 A50,50 0 1,0 54,4 Z" />
+
+    <!-- 定位针 -->
+    <path
+        android:fillColor="#2F81F7"
+        android:pathData="M54,24 c-11,0 -20,9 -20,20 c0,14 20,34 20,34 c0,0 20,-20 20,-34 c0,-11 -9,-20 -20,-20 Z" />
+
+    <!-- 针心 -->
+    <path
+        android:fillColor="#0D1117"
+        android:pathData="M54,36 A8,8 0 1,1 53.9,36 Z" />
+</vector>

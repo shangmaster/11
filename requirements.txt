@@ -1,0 +1,12 @@
+# 核心引擎默认零第三方依赖（只用标准库）。
+# 下面两个是「二维码自动解码」需要的，装一个就够：
+#
+#   pip install pyzbar          # 最准；Linux/Termux 还需 pkg install zbar
+#   pip install opencv-python-headless   # 纯 wheel，但体积大
+#
+# 手机端（Termux）推荐：
+#   pkg install python zbar
+#   pip install pyzbar pillow
+#
+pyzbar>=0.1.9; platform_system != "Darwin"
+pillow>=10.0

@@ -1,0 +1,70 @@
+{
+  "_说明": "复制成 config.json 再改。所有键都可以不写，缺省用 DEFAULT_CONFIG。",
+
+  "uid": "",
+  "fid": "",
+  "uname": "",
+  "deviceCode": "",
+
+  "courses": [],
+  "_courses说明": "留空=全部课程。也可以填 courseId 或课程名，只监控这几门",
+
+  "poll": {
+    "activeSeconds": 5,
+    "idleSeconds": 12,
+    "maxCoursesPerRound": 40
+  },
+
+  "sign": {
+    "plain": true,
+    "location": true,
+    "qr": true,
+    "code": false,
+    "gesture": false,
+    "preSignWarmup": true
+  },
+  "_sign说明": "code/gesture 要老师屏幕上的数字或轨迹，默认关；开了也只能等你在手机上手动补",
+
+  "location": {
+    "mode": "auto",
+    "datum": "gcj02",
+    "point": null,
+    "address": "",
+    "amapKey": "",
+    "jitterMeters": 30,
+    "useOsmFallback": true
+  },
+  "_location说明": {
+    "mode": "auto=按老师填的 locationText 自动地理编码（无人值守）；fixed=用 point；manual=只认地图页选的",
+    "datum": "地图页给的是 gcj02，别乱改；除非你直接抄 GPS 原始坐标",
+    "amapKey": "可选。填了地址解析更准（高德开放平台申请 Web 服务 key，免费）",
+    "jitterMeters": "每次提交在落点周围随机偏移的半径，0=关掉"
+  },
+
+  "photo": {
+    "enabled": true,
+    "file": "",
+    "album": [],
+    "photoResult": ""
+  },
+  "_photo说明": "album 里放多张图会轮换使用，避免每次签到都是同一张照片（服务端存图）",
+
+  "qr": {
+    "pendingMinutes": 25,
+    "dedupeSeconds": 6
+  },
+
+  "notify": {
+    "bark": "",
+    "ntfy": "",
+    "pushplus": "",
+    "wecom": "",
+    "onlyResult": true
+  },
+  "_notify说明": "bark= https://api.day.app/你的key ；ntfy= 主题名或完整URL；pushplus= token；wecom= 机器人 webhook",
+
+  "log": {
+    "level": "info",
+    "file": ""
+  }
+}
